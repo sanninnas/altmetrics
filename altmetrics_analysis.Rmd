@@ -1,0 +1,384 @@
+---
+title: "On the origin of citations"
+author: "sanninnas"
+date: "September 15, 2015"
+output: 
+    html_document:
+        toc: true
+        number_sections: true
+        theme: cerulean
+        highlight: espresso
+        fig_width: 10
+        fig_height: 3
+        fig_caption: yes
+        self_contained: false
+---
+
+# Load the data
+## using read.delim
+
+```{r load_data}
+counts_raw <- read.delim("data//counts-raw.txt.gz")
+counts_norm <- read.delim("data//counts-norm.txt.gz")
+```
+
+# Data exploration
+
+What's the distribution of authors in all articles of our data set?
+```{r author_histogram, echo=FALSE, fig.cap="Figure 1: Number of Authors per Article", fig.height=8, fig.width=8}
+hist(counts_raw$authorsCount, main="Authors per paper", xlab="# authors")
+```
+
+Number of facebook shares per article
+```{r facebookshare_histogram, echo=FALSE, fig.cap="Figure 2: Number of Facebook Shares per Article"}
+hist(counts_raw$facebookShareCount, main="Facebook Popularity", xlab="# Shares")
+```
+The average number of Facebook shares per paper in the data set is `r mean(counts_raw$facebookShareCount)`
+
+## dplyr
+```{r}
+library("dplyr")
+```
+
+subsetting
+```{r}
+research <- filter(counts_raw, articleType == "Research Article")
+```
+
+```{r}
+research_2006 <- filter(research, year ==2006)
+nrow(research_2006)
+```
+
+```{r}
+research_2006_fb <- filter(research, year == 2006, 
+                           facebookCommentCount >0)
+nrow(research_2006_fb)
+```
+
+```{r}
+research_2006_fb_tweet_disease <- filter(research, year == 2006, 
+                           facebookCommentCount >0 | backtweetsCount >0,
+                           grepl("Infectious Diseases", plosSubjectTags))
+nrow(research_2006_fb_tweet_disease)
+```
+
+```{r}
+colnames(research)
+```
+
+```{r}
+article_info <- select(research, doi, pubDate, journal, title, articleType, authorsCount)
+colnames(article_info)
+```
+
+```{r}
+article_info <- select(research, doi:authorsCount)
+colnames(article_info)
+```
+
+```{r}
+metrics <- select(research, contains("Count"), -authorsCount, f1000Factor, wikipediaCites)
+colnames(metrics)
+```
+
+```{r}
+head(select(research, journal))
+head(select(research, 3))
+```
+
+```{r}
+# getting out rows by index
+slice(article_info, 1:3)
+```
+
+```{r}
+# lesson 12 challange 2 'what are people reading but not citing'
+low_cite <- research %>% 
+    filter(year <= 2008,
+                    pdfDownloadsCount > 1000,
+                    mendeleyReadersCount > 15,
+                    wosCountThru2011 < 10) %>% 
+    select(journal, title, year)
+nrow(low_cite)
+```
+
+### chaining commands with dpylr
+pipe character %>%
+
+```{r}
+facebook_2006 <- research %>% 
+    filter(year == 2006) %>% 
+    select(contains("facebook"))
+head(facebook_2006)
+```
+
+arrange works similar to function order
+```{r}
+research %>% arrange(desc(authorsCount, wosCountThru2011)) %>%
+    select(authorsCount, wosCountThru2011) %>%
+    slice(1:10)
+```
+
+```{r}
+# lesson 13 challenge 1 "Titles of most cited articles"
+research %>% arrange(desc(wosCountThru2011)) %>% select(title) %>% slice(1:3) #or head(3)
+```
+
+```{r}
+# lesson 13 challenge 2 "Lots of authors"
+research %>% arrange(desc(authorsCount)) %>% 
+    select(authorsCount, title, journal, plosSubjectTags) %>% slice(1:3)
+```
+
+### summarizing with dplyr
+```{r}
+research <- research %>% mutate(weeksSincePublished = daysSincePublished / 7,
+                                yearsSincePublished = weeksSincePublished / 52)
+research %>% select(contains("Since")) %>% slice(1:10)
+```
+
+using summarize
+```{r}
+research %>% summarize(plos_mean = mean(plosCommentCount), plos_sd = sd(plosCommentCount), num = n())
+```
+
+### using group_by
+```{r}
+research %>% group_by(journal, year) %>% 
+    summarize(tweets_mean = mean(backtweetsCount))
+```
+
+```{r}
+# lesson 14 challenge
+tweets_per_journal <- research %>% 
+    group_by(journal) %>%
+    summarize(num = n(), tweets_mean = mean(backtweetsCount), sem = sd(backtweetsCount)/sqrt(num))
+```
+
+## ggplot2
+```{r}
+library("ggplot2")
+# ggplot2: you have to pass it a dataframe -> mapping each column to a feature of the graph = aesthetic
+```
+
+```{r}
+p <- ggplot(data = research, mapping = aes(x = pdfDownloadsCount,
+                                           y = wosCountThru2011))
+# nothing happens, need to add layers by connecting layers with + sign
+p + geom_point()
+
+# or build everything in the same assignment
+p <- ggplot(data = research, mapping = aes(x = pdfDownloadsCount,
+                                           y = wosCountThru2011)) +
+    geom_point(aes(color = journal)) + # adds on a new variable "journal"" and mapps the color based on that variable
+    geom_smooth()
+p
+
+p <- ggplot(data = research, mapping = aes(x = pdfDownloadsCount,
+                                           y = wosCountThru2011,
+                                           color = journal)) +
+    geom_point()+
+    geom_smooth()
+p
+
+p <- ggplot(data = research, mapping = aes(x = pdfDownloadsCount,
+                                           y = wosCountThru2011)) +
+    geom_point(aes(size = authorsCount)) # size of the point is porportional to the number of authors
+p
+
+p <- ggplot(data = research, mapping = aes(x = pdfDownloadsCount,
+                                           y = wosCountThru2011)) +
+    geom_point(aes(alpha = daysSincePublished)) 
+p
+
+## aes for data-dependent 
+p <- ggplot(data = research, mapping = aes(x = pdfDownloadsCount,
+                                           y = wosCountThru2011)) +
+    geom_point(color = "red") # everything gets assigned red, regardless of the data
+p
+
+```
+
+```{r}
+# lesson 15 challenge 'Citations vs days since published'
+p <- ggplot(data = research, aes(x = daysSincePublished,
+                                 y = wosCountThru2011)) +
+    geom_point(aes(color = journal), alpha = 0.5) +
+    geom_smooth(color = "red")
+p
+```
+
+### using scales
+```{r}
+p <- ggplot(data = research, aes(x = pdfDownloadsCount,
+                                 y = wosCountThru2011)) +
+    geom_point(aes(color = journal)) +
+    geom_smooth()
+p + scale_x_log10() + scale_y_log10() # problem with zeros - intercept in the aes call
+
+p <- ggplot(data = research, aes(x = log10(pdfDownloadsCount+1),
+                                 y = log10(wosCountThru2011+1))) +
+    geom_point(aes(color = journal)) +
+    geom_smooth()
+p
+
+p <- ggplot(data = research, aes(x = log10(pdfDownloadsCount+1),
+                                 y = log10(wosCountThru2011+1))) +
+    geom_point(aes(color = journal)) +
+    geom_smooth() + 
+    scale_x_continuous(breaks = c(1,3), labels = c(10, 1000))
+p
+
+p <- ggplot(data = research, aes(x = log10(pdfDownloadsCount+1),
+                                 y = log10(wosCountThru2011+1))) +
+    geom_point(aes(color = journal)) +
+    geom_smooth() + 
+    scale_x_continuous(breaks = c(1,3), labels = c(10, 1000)) + 
+    scale_y_continuous(breaks = c(1,3), labels = c(10, 1000))
+p
+
+# modifying limits
+# setting limits: R will give warning about values getting cut off
+# scale will geom_smooth calculated with data that are only included after scaling
+p <- ggplot(data = research, aes(x = log10(pdfDownloadsCount+1),
+                                 y = log10(wosCountThru2011+1))) +
+    geom_point(aes(color = journal)) +
+    geom_smooth() + 
+    scale_x_continuous(breaks = c(1,3), labels = c(10, 1000)) + 
+    scale_y_continuous(breaks = c(1,3), labels = c(10, 1000),
+                       limits = c(1,3))
+p
+```
+
+different color options
+```{r}
+p + scale_color_grey()
+p + scale_color_manual(values=c("red", "green", "blue", "orange", "pink", "yellow", "purple"))
+```
+
+```{r}
+library("RColorBrewer")
+display.brewer.all(type = "qual")
+```
+
+```{r}
+p + scale_color_brewer(palette="Dark2")
+
+# changing labels of the graph
+p + scale_color_brewer(palette="Dark2",
+                       labels = 1:7, name = "PLOS")
+```
+
+```{r}
+# lesson 16 challenge
+p <- ggplot(data = research, aes(x = sqrt(pdfDownloadsCount),
+                                 y = sqrt(wosCountThru2011))) +
+    geom_point(aes(color = journal)) +
+    geom_smooth() +
+    scale_color_brewer(palette = "Accent")
+p  
+```
+
+## using facets to make subplots
+
+```{r}
+p <- ggplot(data = research, aes(x = sqrt(pdfDownloadsCount),
+                                 y = sqrt(wosCountThru2011))) +
+    geom_point(aes(color = journal)) +
+    geom_smooth() +
+    scale_color_brewer(palette = "Accent")
+p + facet_wrap(~journal, ncol = 2)
+```
+
+using facet_grid
+
+```{r}
+research <- mutate(research, immuno = grepl("Immunology", plosSubjectTags))
+p + facet_grid(journal~immuno)
+## failed because p was defined without immuno - need to redefine p
+
+p <- ggplot(data = research, aes(x = sqrt(pdfDownloadsCount),
+                                 y = sqrt(wosCountThru2011))) +
+    geom_point(aes(color = journal)) +
+    geom_smooth() +
+    scale_color_brewer(palette = "Accent")
+p + facet_grid(journal~immuno)
+```
+
+
+### using different geoms
+
+```{r}
+p <- ggplot(data = research, aes(x = journal,
+                                 y = sqrt(wosCountThru2011))) +
+    geom_boxplot()
+p
+```
+
+barplots
+```{r}
+tweets_per_journal <- research %>% 
+    group_by(journal) %>%
+    summarize(num = n(), tweets_mean = mean(backtweetsCount), sem = sd(backtweetsCount)/sqrt(num))
+```
+
+```{r}
+tweets_bar <- ggplot(tweets_per_journal, aes(x = journal, y = tweets_mean)) +
+    geom_bar(stat="identity") +
+    geom_errorbar(aes(ymin = tweets_mean - sem, ymax = tweets_mean + sem), width = 0.1) + 
+    geom_text(aes(label = num), hjust = 0, vjust = 0)
+tweets_bar
+```
+
+```{r}
+# lesson 18 challenge 1
+tweets_per_journal_year <- research %>% 
+    group_by(journal, year) %>%
+    summarize(num = n(), tweets_mean = mean(backtweetsCount), sem = sd(backtweetsCount)/sqrt(num))
+
+tweets_bar <- ggplot(tweets_per_journal_year, aes(x = journal, y = tweets_mean)) +
+    geom_bar(stat="identity") +
+    geom_errorbar(aes(ymin = tweets_mean - sem, ymax = tweets_mean + sem), width = 0.1) + 
+    geom_text(aes(label = num), hjust = 0, vjust = 0)
+tweets_bar + facet_wrap(~year, ncol = 2)
+```
+
+```{r}
+# lesson 18 challenge 2
+sd <- ggplot(research, aes(x=log10(wosCountThru2011))) + 
+    geom_histogram()
+sd
+sd <- ggplot(research, aes(x=sqrt(wosCountThru2011))) + 
+    geom_histogram()
+sd
+sd <- ggplot(research, aes(x=log10(wosCountThru2011))) + 
+    geom_density()
+sd
+sd <- ggplot(research, aes(x=sqrt(wosCountThru2011))) + 
+    geom_density()
+sd
+```
+
+### Customizing the plot
+```{r}
+tweets_bar + labs(title = "Mean tweets per journal per year",
+                  x = "Journal", y = "Mean number of tweets") +
+    theme_minimal() +
+    facet_wrap(~year, ncol = 2)
+```
+
+```{r}
+# setting themes for the whole chunk's plots
+theme_set(theme_bw())
+```
+
+
+## Notes
+To add comments in rmarkdown document, use code chunk and set include = FALSE
+```{r include=FALSE}
+## comments here
+```
+
+
+
